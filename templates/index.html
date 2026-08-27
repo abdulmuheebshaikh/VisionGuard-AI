@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>VisionGuard AI</title>
+
+    <link rel="stylesheet" href="/static/style.css">
+
+    <!-- Firebase -->
+    <script type="module">
+
+    // ============================================================
+    // VISIONGUARD AI - FIREBASE CONFIGURATION
+    // ============================================================
+
+    import { initializeApp }
+        from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+
+    import { getAnalytics }
+        from "https://www.gstatic.com/firebasejs/12.18.0/firebase-analytics.js";
+
+    import {
+        getFirestore,
+        collection,
+        addDoc,
+        getDocs,
+        query,
+        orderBy
+    }
+        from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+
+
+    // ============================================================
+    // YOUR NEW FIREBASE PROJECT
+    // ============================================================
+
+    const firebaseConfig = {
+
+        apiKey:
+            "AIzaSyDNWwU7bWgIWHbImK6VMnaOaofGcnZhSUU",
+
+        authDomain:
+            "visionguard-ai-d1be4.firebaseapp.com",
+
+        projectId:
+            "visionguard-ai-d1be4",
+
+        storageBucket:
+            "visionguard-ai-d1be4.firebasestorage.app",
+
+        messagingSenderId:
+            "132849826757",
+
+        appId:
+            "1:132849826757:web:ebf4c23613a49355c6e9ac",
+
+        measurementId:
+            "G-VZWZE79DE7"
+    };
+
+
+    // ============================================================
+    // INITIALIZE FIREBASE
+    // ============================================================
+
+    const app =
+        initializeApp(firebaseConfig);
+
+
+    // ============================================================
+    // FIREBASE ANALYTICS
+    // ============================================================
+
+    let analytics = null;
+
+    try {
+
+        analytics =
+            getAnalytics(app);
+
+    }
+
+    catch (error) {
+
+        console.log(
+            "Firebase Analytics unavailable:",
+            error
+        );
+
+    }
+
+
+    // ============================================================
+    // FIRESTORE DATABASE
+    // ============================================================
+
+    const db =
+        getFirestore(app);
+
+
+    // ============================================================
+    // MAKE FIRESTORE AVAILABLE TO APP.JS
+    // ============================================================
+
+    window.firebaseDB =
+        db;
+
+    window.firebaseCollection =
+        collection;
+
+    window.firebaseAddDoc =
+        addDoc;
+
+    window.firebaseGetDocs =
+        getDocs;
+
+    window.firebaseQuery =
+        query;
+
+    window.firebaseOrderBy =
+        orderBy;
+
+
+    // ============================================================
+    // CONNECTION STATUS
+    // ============================================================
+
+    window.firebaseReady =
+        true;
+
+
+    console.log(
+        "✅ VisionGuard AI Firebase connected successfully."
+    );
+
+    console.log(
+        "✅ Firestore database connected."
+    );
+
+    console.log(
+        "Firebase Project:",
+        "visionguard-ai-d1be4"
+    );
+
+</script>
+</head>
+
+<body>
+
+<aside>
+
+    <div class="brand">
+        <div class="brand-logo">
+            <img src="/static/VisionGuard_AI_logo.jpeg" alt="VisionGuard AI Logo">
+        </div>
+
+        <div>
+            <strong>VisionGuard</strong>
+            <small>AI Screening Lab</small>
+        </div>
+    </div>
+
+    <nav aria-label="Main navigation">
+        <button type="button" class="nav-btn active" id="newScreeningNav">◉ New Screening</button>
+        <button type="button" class="nav-btn" id="historyNav">◌ Screening History</button>
+        <button type="button" class="nav-btn" id="reportsNav">▣ Reports</button>
+        <button type="button" class="nav-btn" id="settingsNav">⚙ Settings</button>
+    </nav>
+
+    <div class="online">
+        <span>●</span> Prototype online
+        <small>AI pipeline ready</small>
+    </div>
+
+    
+
+</aside>
+
+
+<main>
+
+<header>
+
+    <div>
+        <label>SMART INDIA HACKATHON • HEALTH AI</label>
+
+        <h1>Explainable retinal screening</h1>
+
+        <p>
+            A transparent AI workflow for early diabetic-retinopathy
+            screening.
+        </p>
+    </div>
+
+    <em>● SYSTEM READY</em>
+
+</header>
+
+
+<!-- PATIENT INFORMATION -->
+
+<section class="patient-card">
+
+    <div class="section-title">
+
+        <div>
+            <label>PATIENT INFORMATION</label>
+
+            <h2>Screening profile</h2>
+        </div>
+
+        <span class="id-badge" id="screeningBadge">SCR —</span>
+
+    </div>
+
+
+    <div class="patient-grid">
+
+        <div class="input-group">
+
+            <label>Person Name *</label>
+
+            <input
+                id="personName"
+                type="text"
+                placeholder="Enter person's name"
+                autocomplete="off"
+            >
+
+        </div>
+
+
+        <div class="input-group">
+
+            <label>Age *</label>
+
+            <input
+                id="personAge"
+                type="number"
+                min="1"
+                max="120"
+                placeholder="Enter age"
+            >
+
+        </div>
+
+
+        <div class="input-group">
+
+            <label>Gender</label>
+
+            <select id="gender">
+
+                <option value="">Select</option>
+
+                <option>Male</option>
+
+                <option>Female</option>
+
+                <option>Other</option>
+
+            </select>
+
+        </div>
+
+
+        <div class="input-group">
+
+            <label>Patient ID</label>
+
+            <input
+                id="PatientId"
+                type="text"
+                placeholder="Generated after analysis"
+                readonly
+            >
+
+        </div>
+
+
+        <div class="input-group">
+
+            <label>Screening ID</label>
+
+            <input
+                id="ScreeningId"
+                type="text"
+                placeholder="Generated after analysis"
+                readonly
+            >
+
+        </div>
+
+    </div>
+
+</section>
+
+
+<!-- MAIN SCREENING -->
+
+<section class="top" id="newScreeningSection">
+
+    <!-- IMAGE -->
+
+    <article>
+
+        <h3>
+            <i>01</i>
+            Retinal image
+        </h3>
+
+        <p>
+            Upload a clear fundus photograph.
+        </p>
+
+
+        <label class="drop" id="dropArea">
+
+            <input
+                id="file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+            >
+
+            <b>＋</b>
+
+            <strong>Drop image here</strong>
+
+            <small>
+                or click to browse • JPG, PNG, WEBP • max 10 MB
+            </small>
+
+        </label>
+
+
+        <div class="image-preview-box">
+
+            <img
+                id="preview"
+                class="preview"
+                alt="Retinal image preview"
+            >
+
+            <div id="previewInfo">
+                No image selected
+            </div>
+
+        </div>
+
+
+        <div class="button-row">
+
+            <button
+                id="analyze"
+                disabled
+            >
+                Analyze retinal image →
+            </button>
+
+
+            <button
+                id="clearBtn"
+                class="secondary"
+            >
+                Clear
+            </button>
+
+        </div>
+
+    </article>
+
+
+    <!-- QUALITY -->
+
+    <article class="quality">
+
+        <h3>
+            <i>02</i>
+            Image quality gate
+        </h3>
+
+        <p>
+            Reject poor inputs before AI analysis.
+        </p>
+
+
+        <div class="ring">
+
+            <b id="qscore">—</b>
+
+            <small>quality</small>
+
+        </div>
+
+
+        <span id="qmsg">
+            Upload an image to run the quality gate.
+        </span>
+
+
+        <ul>
+
+            <li>✓ Exposure check</li>
+
+            <li>✓ Sharpness check</li>
+
+            <li>✓ Safe input validation</li>
+
+            <li>✓ Fundus image verification</li>
+
+        </ul>
+
+    </article>
+
+</section>
+
+
+<!-- AI RESULT -->
+
+<section>
+
+    <div class="section">
+
+        <div>
+
+            <label>AI INTERPRETATION</label>
+
+            <h2>Transparent result</h2>
+
+        </div>
+
+
+        <mark id="mode">
+            Waiting for image
+        </mark>
+
+    </div>
+
+
+    <div class="results">
+
+
+        <!-- EXPLAINABILITY -->
+
+        <article>
+
+            <div class="barhead">
+
+                <b>Explainability view</b>
+
+                <span>Grad-CAM ready</span>
+
+            </div>
+
+
+            <div class="stage">
+
+                <img
+                    id="resultImg"
+                    alt="Analyzed retinal image"
+                >
+
+                <div id="empty">
+
+                    Your retinal image and AI attention map
+                    will appear here.
+
+                </div>
+
+                <div id="heat"></div>
+
+            </div>
+
+
+            <small>
+                ● AI attention
+                &nbsp; • Explainability is visual evidence,
+                not proof of disease.
+            </small>
+
+        </article>
+
+
+        <!-- RESULT DETAILS -->
+
+        <article>
+
+
+            <div class="metric">
+
+                SCREENING CATEGORY
+
+                <strong id="pred">
+                    —
+                </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+                MODEL CONFIDENCE
+
+                <strong id="conf">
+                    —
+                </strong>
+
+
+                <div class="progress">
+
+                    <i id="prog"></i>
+
+                </div>
+
+            </div>
+
+
+            <div class="risk">
+
+                <label>
+                    RECOMMENDED ACTION
+                </label>
+
+                <b id="risk">
+                    Awaiting analysis
+                </b>
+
+                <p id="explain">
+                    Upload a fundus image to begin.
+                </p>
+
+            </div>
+
+
+            <b>
+                Potential visual findings
+            </b>
+
+
+            <div id="lesions">
+                —
+            </div>
+
+
+            <button
+                id="reportBtn"
+                class="secondary"
+            >
+                Generate screening report
+            </button>
+
+        </article>
+
+    </div>
+
+</section>
+
+
+<!-- PATIENT FRIENDLY + HISTORY -->
+
+<section class="bottom">
+
+
+    <article>
+
+        <div class="barhead">
+
+            <b>Patient-friendly explanation</b>
+
+            <span>Language</span>
+
+        </div>
+
+
+        <select id="lang">
+
+            <option>English</option>
+
+            <option>ಕನ್ನಡ (Kannada)</option>
+
+            <option>हिन्दी (Hindi)</option>
+
+        </select>
+
+
+        <p id="plain">
+
+            The system will explain the result in simple
+            language after analysis.
+
+        </p>
+
+    </article>
+
+
+    <article>
+
+        <div class="barhead">
+
+            <b>Current screening</b>
+
+            <span>Session</span>
+
+        </div>
+
+
+        <div class="mini-info">
+
+    <!-- Patient -->
+    <div>
+        <small>Patient</small>
+        <strong id="currentPatient">—</strong>
+    </div>
+
+    <!-- Age -->
+    <div>
+        <small>Age</small>
+        <strong id="currentAge">—</strong>
+    </div>
+
+    <!-- Gender -->
+    <div>
+        <small>Gender</small>
+        <strong id="currentGender">—</strong>
+    </div>
+
+    <!-- Patient ID -->
+    <div>
+        <small>Patient ID</small>
+        <strong id="currentPatientId">—</strong>
+    </div>
+
+    <!-- Result -->
+    <div>
+        <small>Result</small>
+        <strong id="currentResult">—</strong>
+    </div>
+
+    <!-- Confidence -->
+    <div>
+        <small>Confidence</small>
+        <strong id="currentConfidence">—</strong>
+    </div>
+
+    <!-- Date -->
+    <div>
+        <small>Date & Time</small>
+        <strong id="currentDate">—</strong>
+    </div>
+
+    </div>
+
+
+<!-- Previous screening summary -->
+
+    <p id="history">
+    No screening yet.
+    </p>
+</article>
+</section>
+
+
+<!-- FIREBASE HISTORY -->
+
+<section class="history-section" id="screeningHistorySection">
+
+    <div class="section">
+
+        <div>
+
+            <label>FIREBASE CLOUD HISTORY</label>
+
+            <h2>Previous screenings</h2>
+
+        </div>
+
+
+        <button
+            id="refreshHistory"
+            class="small-button"
+        >
+            ↻ Refresh
+        </button>
+
+    </div>
+
+
+    <div class="table-container">
+
+        <table>
+
+            <thead>
+
+                <tr>
+
+                    <th>Patient</th>
+
+                    <th>Age</th>
+
+                    <th>Result</th>
+
+                    <th>Confidence</th>
+
+                    <th>Risk</th>
+
+                    <th>Date</th>
+
+                </tr>
+
+            </thead>
+
+
+            <tbody id="historyTable">
+
+                <tr>
+
+                    <td colspan="6">
+                        No previous screenings.
+                    </td>
+
+                </tr>
+
+            </tbody>
+
+        </table>
+
+    </div>
+
+</section>
+
+
+<!-- FOOTER -->
+
+<div class="app-footer">
+
+    <strong>VisionGuard AI</strong>
+
+    <span>
+        Explainable AI • Retinal Screening • Hackathon Prototype
+    </span>
+
+</div>
+
+</main>
+
+
+<script src="/static/app.js"></script>
+
+</body>
+</html>
