@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VisionGuard AI</title>
+<link rel="stylesheet" href="/static/style.css">
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
+import { getFirestore, collection, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { getAuth } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDNWwU7bWgIWHbImK6VMnaOaofGcnZhSUU",
+  authDomain: "visionguard-ai-d1be4.firebaseapp.com",
+  projectId: "visionguard-ai-d1be4",
+  storageBucket: "visionguard-ai-d1be4.firebasestorage.app",
+  messagingSenderId: "132849826757",
+  appId: "1:132849826757:web:ebf4c23613a49355c6e9ac",
+  measurementId: "G-VZWZE79DE7"
+};
+
+try {
+  const app = initializeApp(firebaseConfig);
+  window.firebaseDB = getFirestore(app);
+  window.firebaseAuth = getAuth(app);
+  window.firebaseCollection = collection;
+  window.firebaseAddDoc = addDoc;
+  window.firebaseGetDocs = getDocs;
+  window.firebaseReady = true;
+  console.log("VisionGuard Firebase connected:", firebaseConfig.projectId);
+} catch (error) {
+  window.firebaseReady = false;
+  console.error("Firebase initialization failed:", error);
+}
+</script>
+</head>
+
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-logo"><img src="/static/visionguard-logo.jpeg" alt="VisionGuard AI Logo"></div>
+    <div>
+      <strong>VisionGuard</strong>
+      <small>AI Screening Lab</small>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active" id="newScreeningNav"><span>◉</span> New Screening</button>
+    <button class="nav-btn" id="historyNav"><span>◌</span> Screening History</button>
+    <button class="nav-btn" id="reportsNav"><span>▣</span> Reports</button>
+    <button class="nav-btn" id="settingsNav"><span>⚙</span> Settings</button>
+  </nav>
+
+  <div class="online">
+    <span>●</span> System online
+    <small>CNN + Grad-CAM pipeline ready</small>
+  </div>
+
+</aside>
+
+<main>
+  <!-- NEW SCREENING -->
+  <div class="page-section active-page" id="newPage">
+    <header class="page-header">
+      <div>
+        <h1>Explainable retinal screening</h1>
+        <p>A transparent AI workflow for preliminary diabetic-retinopathy screening.</p>
+      </div>
+      <em>● SYSTEM READY</em>
+    </header>
+
+    <section class="patient-card card">
+      <div class="section-title">
+        <div>
+          <label>PATIENT INFORMATION</label>
+          <h2>Screening profile</h2>
+        </div>
+        <span class="id-badge" id="screeningBadge">SCR —</span>
+      </div>
+
+      <div class="patient-grid">
+        <div class="input-group">
+          <label>Patient Name *</label>
+          <input id="personName" type="text" placeholder="Enter patient's name" autocomplete="off">
+        </div>
+        <div class="input-group">
+          <label>Age *</label>
+          <input id="personAge" type="number" min="1" max="120" placeholder="Age">
+        </div>
+        <div class="input-group">
+          <label>Gender</label>
+          <select id="gender">
+            <option value="">Select</option>
+            <option>Male</option>
+            <option>Female</option>
+            <option>Other</option>
+          </select>
+        </div>
+        <div class="input-group">
+          <label>Patient ID</label>
+          <input id="patientId" type="text" readonly placeholder="Generated on analysis">
+        </div>
+        <div class="input-group">
+          <label>Screening ID</label>
+          <input id="screeningId" type="text" readonly placeholder="Generated after analysis">
+        </div>
+      </div>
+    </section>
+
+    <section class="top" id="newScreeningSection">
+      <article>
+        <h3><i>01</i> Retinal image</h3>
+        <p>Upload a clear fundus photograph. The selected image will appear immediately.</p>
+
+        <label class="drop" id="dropArea" for="file">
+          <input id="file" type="file" accept="image/jpeg,image/png,image/webp">
+          <b>＋</b>
+          <strong>Drop image here</strong>
+          <small>or click to browse • JPG, PNG, WEBP • max 10 MB</small>
+        </label>
+
+        <div class="image-preview-box">
+          <img id="preview" class="preview" alt="Selected retinal image">
+          <div class="preview-info" id="previewInfo">No image selected</div>
+        </div>
+
+        <div class="button-row">
+          <button class="primary" id="analyze" disabled>Analyze retinal image →</button>
+          <button class="secondary" id="clearBtn">New / Clear</button>
+        </div>
+      </article>
+
+      <article class="quality">
+        <h3><i>02</i> Image quality gate</h3>
+        <p>The image is checked before CNN analysis.</p>
+        <div class="ring" id="qualityRing">
+          <b id="qscore">—</b><small>QUALITY</small>
+        </div>
+        <span id="qmsg">Upload an image to run the quality gate.</span>
+        <ul>
+          <li>✓ Exposure check</li>
+          <li>✓ Sharpness check</li>
+          <li>✓ Safe file validation</li>
+          <li>✓ Fundus image workflow</li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="interpretation">
+      <div class="section">
+        <div>
+          <label>AI INTERPRETATION</label>
+          <h2>Transparent result</h2>
+        </div>
+        <mark id="mode">Waiting for image</mark>
+      </div>
+
+      <div class="results">
+        <article>
+          <div class="barhead"><b>Explainability view</b><span>Grad-CAM</span></div>
+          <div class="stage">
+            <img id="resultImg" alt="Analyzed retinal image">
+            <div id="empty">Your analyzed retinal image and Grad-CAM attention map will appear here.</div>
+            <div id="heat"></div>
+          </div>
+          <small>AI attention is an explainability aid, not proof of disease.</small>
+        </article>
+
+        <article>
+          <div class="metric">
+            SCREENING CATEGORY
+            <strong id="pred">—</strong>
+          </div>
+          <div class="metric">
+            MODEL CONFIDENCE
+            <strong id="conf">—</strong>
+            <div class="progress"><i id="prog"></i></div>
+          </div>
+          <div class="risk">
+            <label>RECOMMENDED ACTION</label>
+            <b id="risk">Awaiting analysis</b>
+            <p id="explain">Upload a fundus image to begin.</p>
+          </div>
+          <b>Potential visual findings</b>
+          <div class="findings" id="lesions">—</div>
+          <button class="secondary wide-btn" id="reportBtn">Generate screening report</button>
+        </article>
+      </div>
+    </section>
+
+    <section class="bottom">
+      <article>
+        <div class="barhead"><b>Patient-friendly explanation</b><span>Language</span></div>
+        <select id="lang">
+          <option>English</option>
+          <option>ಕನ್ನಡ (Kannada)</option>
+          <option>हिन्दी (Hindi)</option>
+        </select>
+        <p id="plain">The system will explain the result in simple language after analysis.</p>
+      </article>
+
+      <article>
+        <div class="barhead"><b>Current screening</b><span>Session</span></div>
+        <div class="mini-info">
+          <div><small>Patient</small><strong id="currentPatient">—</strong></div>
+          <div><small>Age</small><strong id="currentAge">—</strong></div>
+          <div><small>Gender</small><strong id="currentGender">—</strong></div>
+          <div><small>Patient ID</small><strong id="currentPatientId">—</strong></div>
+          <div><small>Screening ID</small><strong id="currentScreeningId">—</strong></div>
+          <div><small>Result</small><strong id="currentResult">—</strong></div>
+          <div><small>Confidence</small><strong id="currentConfidence">—</strong></div>
+          <div><small>Date & Time</small><strong id="currentDate">—</strong></div>
+        </div>
+        <p id="history">No screening yet.</p>
+      </article>
+    </section>
+  </div>
+
+  <!-- SCREENING HISTORY -->
+  <div class="page-section" id="historyPage">
+    <header class="page-header compact">
+      <div>
+        <label>FIREBASE CLOUD HISTORY</label>
+        <h1>Screening History</h1>
+        <p>Search patients, filter screenings by date, and open complete results.</p>
+      </div>
+      <button class="secondary" id="refreshHistory">↻ Refresh</button>
+    </header>
+
+    <section class="filter-card card">
+      <div class="search-wrap">
+        <span>⌕</span>
+        <input id="historySearch" type="search" placeholder="Search by patient name, Patient ID or Screening ID...">
+      </div>
+      <div class="date-field">
+        <label>From</label>
+        <input id="historyFrom" type="date">
+      </div>
+      <div class="date-field">
+        <label>To</label>
+        <input id="historyTo" type="date">
+      </div>
+      <button class="secondary" id="clearFilters">Clear filters</button>
+    </section>
+
+    <div class="history-meta">
+      <span id="historyCount">0 screenings</span>
+      <span>Newest first</span>
+    </div>
+
+    <section class="history-grid" id="historyCards">
+      <div class="empty-card">Loading screening history...</div>
+    </section>
+  </div>
+
+  <!-- REPORTS -->
+  <div class="page-section" id="reportsPage">
+    <header class="page-header compact">
+      <div>
+        <label>REPORT CENTER</label>
+        <h1>Screening Reports</h1>
+        <p>View, print, or download professional screening reports from saved results.</p>
+      </div>
+      <button class="secondary" id="refreshReports">↻ Refresh</button>
+    </header>
+
+    <section class="report-banner card">
+      <div class="report-icon">▣</div>
+      <div>
+        <h2>Clinical-style screening reports</h2>
+        <p>Each report includes patient details, AI result, confidence, image quality, explanation, findings and Grad-CAM when available.</p>
+      </div>
+    </section>
+
+    <section class="reports-grid" id="reportCards">
+      <div class="empty-card">Loading reports...</div>
+    </section>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="page-section" id="settingsPage">
+    <header class="page-header compact">
+      <div>
+        <label>SYSTEM CONFIGURATION</label>
+        <h1>Settings</h1>
+        <p>VisionGuard AI configuration and system information.</p>
+      </div>
+    </header>
+
+    <section class="settings-grid">
+      <article class="settings-card card">
+        <div class="setting-icon">AI</div>
+        <div>
+          <h3>AI Model</h3>
+          <p>VisionGuard CNN with five screening categories and Grad-CAM explainability.</p>
+        </div>
+        <span class="setting-status">READY</span>
+      </article>
+
+      <article class="settings-card card">
+        <div class="setting-icon">DB</div>
+        <div>
+          <h3>Cloud History</h3>
+          <p>Screening records are saved to the connected Firebase Firestore database after analysis.</p>
+        </div>
+        <span class="setting-status" id="firebaseStatus">CHECKING</span>
+      </article>
+
+      <article class="settings-card card">
+        <div class="setting-icon">API</div>
+        <div>
+          <h3>Backend Service</h3>
+          <p>Flask analysis service and CNN model health endpoint.</p>
+        </div>
+        <span class="setting-status" id="backendStatus">CHECKING</span>
+      </article>
+
+      <article class="settings-card card">
+        <div class="setting-icon">ID</div>
+        <div>
+          <h3>Patient ID Counter</h3>
+          <p>Local counter used to create readable patient IDs for new screenings on this browser.</p>
+        </div>
+        <button class="secondary" id="resetPatientCounter">Reset counter</button>
+      </article>
+    </section>
+
+    <section class="settings-panel card">
+      <label>SCREENING CATEGORIES</label>
+      <h2>AI output classes</h2>
+      <div class="class-list">
+        <span>No DR</span>
+        <span>Mild DR</span>
+        <span>Moderate DR</span>
+        <span>Severe DR</span>
+        <span>Proliferative DR</span>
+      </div>
+      <div class="notice">
+        <strong>Important:</strong> VisionGuard AI is a preliminary screening aid. It is not a replacement for professional diagnosis. Results should be reviewed by a qualified eye-care professional.
+      </div>
+    </section>
+  </div>
+
+  <footer class="app-footer">
+    <strong>VisionGuard AI</strong> • Explainable AI • Retinal Screening
+  </footer>
+</main>
+
+<!-- DETAILS MODAL -->
+<div class="modal" id="recordModal" aria-hidden="true">
+  <div class="modal-backdrop" data-close-modal></div>
+  <div class="modal-panel">
+    <div class="modal-head">
+      <div>
+        <label>SCREENING DETAILS</label>
+        <h2 id="modalTitle">Screening</h2>
+      </div>
+      <button class="icon-btn" data-close-modal aria-label="Close">×</button>
+    </div>
+    <div id="modalBody" class="modal-body"></div>
+    <div class="modal-actions">
+      <button class="secondary" id="modalDownload">Download Report</button>
+      <button class="secondary" id="modalPrint">Print</button>
+      <button class="primary modal-close-btn" data-close-modal>Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
