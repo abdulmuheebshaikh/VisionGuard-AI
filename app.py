@@ -989,95 +989,23 @@ def analyze():
             finding
         ]
 
-        # ----------------------------------------------------
-        # GRAD-CAM
-        # ----------------------------------------------------
+        # ------------------------------------------------------------
+]       # GRAD-CAM
+        # ------------------------------------------------------------
+
+# Temporarily disabled for Render resource testing.
+# CNN prediction will still be performed normally.
 
         gradcam_url = None
 
-        gradcam_status = (
-            "unavailable"
-        )
-
+        gradcam_status = "disabled"
+    
         gradcam_message = (
-            "Grad-CAM not generated."
-        )
+            "Grad-CAM temporarily disabled to reduce server resource usage."
+)
 
-        try:
-
-            print(
-                "Starting Grad-CAM..."
-            )
-
-            gradcam_start = (
-                datetime.datetime.now()
-            )
-
-            heatmap = create_gradcam_heatmap(
-                tf.convert_to_tensor(
-                    ai_img
-                ),
-                predicted_index
-            )
-
-            gradcam_filename = (
-                f"{screening_id}_gradcam.jpg"
-            )
-
-            gradcam_path = (
-                GRADCAM_FOLDER /
-                gradcam_filename
-            )
-
-            save_gradcam_overlay(
-                img,
-                heatmap,
-                gradcam_path
-            )
-
-            gradcam_url = (
-                "/static/gradcam/"
-                + gradcam_filename
-            )
-
-            gradcam_time = (
-                datetime.datetime.now()
-                - gradcam_start
-            ).total_seconds()
-
-            gradcam_status = (
-                "generated"
-            )
-
-            gradcam_message = (
-                "Grad-CAM attention map "
-                "generated for the predicted class."
-            )
-
-            print(
-                "Grad-CAM completed in",
-                round(gradcam_time, 2),
-                "seconds"
-            )
-
-        except Exception as gradcam_error:
-
-            gradcam_status = (
-                "unavailable"
-            )
-
-            gradcam_message = (
-                "Grad-CAM could not be generated, "
-                "but the CNN screening result is available."
-            )
-
-            print(
-                "Grad-CAM warning:",
-                gradcam_error
-            )
-
-            traceback.print_exc()
-
+        print("Grad-CAM skipped.")
+        
         # ----------------------------------------------------
         # TIMESTAMP
         # ----------------------------------------------------
