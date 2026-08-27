@@ -1,4 +1,5 @@
 from flask import Flask, render_template, request, jsonify
+from pathlib import Path
 from PIL import Image, ImageStat, ImageFilter
 import os
 import uuid
@@ -7,44 +8,55 @@ import traceback
 import numpy as np
 import tensorflow as tf
 
+
 # ============================================================
-# VISIONGUARD AI - FLASK BACKEND
-# Features:
-#   - CNN/Keras diabetic-retinopathy classification
-#   - Image quality gate
-#   - Grad-CAM explainability
-#   - Patient information
-#   - Patient ID + separate Screening ID
-#   - Saved original image + Grad-CAM image
-#   - JSON response compatible with the existing app.js
-#
-# IMPORTANT:
-#   Keep CLASS_NAMES in EXACTLY the same order used while
-#   training visionguard_model.keras.
+# VISIONGUARD AI - RENDER-OPTIMIZED FLASK BACKEND
 # ============================================================
 
 app = Flask(__name__)
 
 # ------------------------------------------------------------
-# CONFIGURATION
+# RENDER / CPU CONFIGURATION
 # ------------------------------------------------------------
 
-MODEL_PATH = "visionguard_model.keras"
+# Limit TensorFlow CPU threads so the free Render instance
+# does not get overloaded.
+try:
+    tf.config.threading.set_intra_op_parallelism_threads(2)
+    tf.config.threading.set_inter_op_parallelism_threads(2)
+except Exception:
+    pass
 
-UPLOAD_FOLDER = os.path.join("static", "uploads")
-GRADCAM_FOLDER = os.path.join("static", "gradcam")
 
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
+# ------------------------------------------------------------
+# PATHS
+# ------------------------------------------------------------
+
+BASE_DIR = Path(__file__).resolve().parent
+
+MODEL_PATH = BASE_DIR / "visionguard_model.keras"
+
+UPLOAD_FOLDER = BASE_DIR / "static" / "uploads"
+GRADCAM_FOLDER = BASE_DIR / "static" / "gradcam"
+
+ALLOWED_EXTENSIONS = {
+    "png",
+    "jpg",
+    "jpeg",
+    "webp"
+}
 
 app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(GRADCAM_FOLDER, exist_ok=True)
+UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
+GRADCAM_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
 # ------------------------------------------------------------
 # MODEL CLASSES
 # ------------------------------------------------------------
+# IMPORTANT:
+# Keep this order exactly the same as the model training order.
 
 CLASS_NAMES = [
     "Mild",
@@ -56,26 +68,149 @@ CLASS_NAMES = [
 
 
 # ------------------------------------------------------------
-# LOAD MODEL
+# GLOBAL MODEL VARIABLES
 # ------------------------------------------------------------
 
-print("=" * 60)
-print("VisionGuard AI - loading CNN model...")
-print("Model:", MODEL_PATH)
+model = None
+gradcam_model = None
+last_conv_layer = None
+
+
+# ------------------------------------------------------------
+# LOAD CNN MODEL
+# ------------------------------------------------------------
+
+print("=" * 70)
+print("VISIONGUARD AI")
+print("Loading CNN model...")
+print("Model path:", MODEL_PATH)
+print("=" * 70)
 
 try:
+
     model = tf.keras.models.load_model(
-        MODEL_PATH,
+        str(MODEL_PATH),
         compile=False
     )
-    print("VisionGuard AI CNN model loaded successfully.")
-    print("Model input:", model.input_shape)
-    print("Model output:", model.output_shape)
+
+    print("CNN MODEL LOADED SUCCESSFULLY")
+    print("Input shape:", model.input_shape)
+    print("Output shape:", model.output_shape)
+
 except Exception as error:
+
     model = None
-    print("ERROR: Could not load the model.")
+
+    print("=" * 70)
+    print("ERROR: CNN MODEL COULD NOT BE LOADED")
     print(error)
-    print("Make sure visionguard_model.keras is in the same folder as app.py.")
+    traceback.print_exc()
+    print("=" * 70)
+
+
+# ------------------------------------------------------------
+# FIND LAST CONVOLUTION LAYER
+# ------------------------------------------------------------
+
+def find_last_conv_layer(keras_model):
+
+    candidates = []
+
+    for layer in keras_model.layers:
+
+        try:
+
+            shape = layer.output.shape
+
+            if len(shape) != 4:
+                continue
+
+            layer_type = layer.__class__.__name__.lower()
+
+            if (
+                "conv" in layer_type
+                or "separable" in layer_type
+                or "depthwise" in layer_type
+            ):
+
+                candidates.append(layer)
+
+        except Exception:
+            continue
+
+    if candidates:
+        return candidates[-1]
+
+    # Fallback:
+    # use the last 4-D feature-map layer.
+
+    for layer in reversed(keras_model.layers):
+
+        try:
+
+            if len(layer.output.shape) == 4:
+                return layer
+
+        except Exception:
+            continue
+
+    return None
+
+
+# ------------------------------------------------------------
+# PREPARE GRAD-CAM MODEL ONCE
+# ------------------------------------------------------------
+
+def prepare_gradcam_model():
+
+    global gradcam_model
+    global last_conv_layer
+
+    if model is None:
+        return
+
+    try:
+
+        last_conv_layer = find_last_conv_layer(model)
+
+        if last_conv_layer is None:
+
+            print(
+                "WARNING: No convolution layer found."
+            )
+
+            gradcam_model = None
+            return
+
+        print(
+            "Grad-CAM layer:",
+            last_conv_layer.name
+        )
+
+        gradcam_model = tf.keras.models.Model(
+            inputs=model.inputs,
+            outputs=[
+                last_conv_layer.output,
+                model.output
+            ]
+        )
+
+        print(
+            "Grad-CAM model prepared successfully."
+        )
+
+    except Exception as error:
+
+        gradcam_model = None
+
+        print(
+            "WARNING: Could not prepare Grad-CAM model:"
+        )
+
+        print(error)
+
+
+prepare_gradcam_model()
 
 
 # ------------------------------------------------------------
@@ -83,35 +218,36 @@ except Exception as error:
 # ------------------------------------------------------------
 
 def allowed_file(filename):
-    if not filename or "." not in filename:
+
+    if not filename:
         return False
 
-    extension = filename.rsplit(".", 1)[1].lower()
+    if "." not in filename:
+        return False
+
+    extension = filename.rsplit(
+        ".",
+        1
+    )[1].lower()
+
     return extension in ALLOWED_EXTENSIONS
 
 
-def format_class_name(class_name):
-    return str(class_name).replace("_", " ")
-
-
 def make_screening_id():
-    """
-    Creates a separate screening ID for every analysis.
 
-    Example:
-        SCR-20260827-A1B2C3
-    """
-    date_part = datetime.datetime.now().strftime("%Y%m%d")
+    date_part = datetime.datetime.now().strftime(
+        "%Y%m%d"
+    )
+
     random_part = uuid.uuid4().hex[:6].upper()
+
     return f"SCR-{date_part}-{random_part}"
 
 
 def get_input_size():
-    """
-    Reads the CNN input size from the loaded model.
-    Falls back to 224x224 if the model uses a dynamic/unknown size.
-    """
+
     try:
+
         shape = model.input_shape
 
         if isinstance(shape, list):
@@ -121,91 +257,115 @@ def get_input_size():
         width = shape[2]
 
         if height and width:
-            return int(width), int(height)
+
+            return (
+                int(width),
+                int(height)
+            )
+
     except Exception:
+
         pass
 
     return 224, 224
 
 
 def prepare_image(img):
-    """
-    Same basic preprocessing used by the current application:
-    RGB -> model input size -> float32 -> [0,1] -> batch dimension.
-    """
+
     width, height = get_input_size()
 
-    resized = img.convert("RGB").resize(
+    resized = img.convert(
+        "RGB"
+    ).resize(
         (width, height),
         Image.Resampling.LANCZOS
     )
 
-    array = np.asarray(resized).astype("float32") / 255.0
-    array = np.expand_dims(array, axis=0)
+    array = np.asarray(
+        resized
+    ).astype(
+        "float32"
+    ) / 255.0
+
+    array = np.expand_dims(
+        array,
+        axis=0
+    )
 
     return array
 
 
 # ------------------------------------------------------------
-# IMAGE QUALITY GATE
+# IMAGE QUALITY CHECK
 # ------------------------------------------------------------
 
 def quality_check(img):
-    """
-    Basic quality gate.
 
-    Checks:
-      - brightness
-      - sharpness
-
-    This is a screening-quality check, not a medical diagnosis.
-    """
-
-    x = img.convert("RGB").resize((256, 256))
+    x = img.convert(
+        "RGB"
+    ).resize(
+        (256, 256)
+    )
 
     stats = ImageStat.Stat(x)
-    brightness = sum(stats.mean) / 3.0
 
-    edges = x.filter(ImageFilter.FIND_EDGES)
-    edge_stats = ImageStat.Stat(edges)
-    sharpness = sum(edge_stats.var) / 3.0
+    brightness = sum(
+        stats.mean
+    ) / 3.0
+
+    edges = x.filter(
+        ImageFilter.FIND_EDGES
+    )
+
+    edge_stats = ImageStat.Stat(
+        edges
+    )
+
+    sharpness = sum(
+        edge_stats.var
+    ) / 3.0
 
     if brightness < 35:
+
         return {
             "score": 28,
             "status": "poor",
-            "message": (
+            "message":
                 "Too dark. Capture a brighter, centered fundus image."
-            )
         }
 
     if brightness > 225:
+
         return {
             "score": 35,
             "status": "poor",
-            "message": (
+            "message":
                 "Overexposed. Reduce glare and recapture."
-            )
         }
 
     if sharpness < 18:
+
         return {
             "score": 42,
             "status": "poor",
-            "message": (
+            "message":
                 "Image appears blurry. Hold the camera steady and recapture."
-            )
         }
 
-    score = int(70 + sharpness / 8)
-    score = min(98, max(70, score))
+    score = int(
+        70 + sharpness / 8
+    )
+
+    score = min(
+        98,
+        max(70, score)
+    )
 
     return {
         "score": score,
         "status": "good",
-        "message": (
+        "message":
             "Image quality is acceptable for AI screening."
-        )
     }
 
 
@@ -214,166 +374,134 @@ def quality_check(img):
 # ------------------------------------------------------------
 
 def get_risk_message(predicted_class):
-    class_name = format_class_name(predicted_class).lower()
 
-    if class_name == "no dr":
+    if predicted_class == "No_DR":
+
         return {
             "risk": "Low screening indication",
-            "explanation": (
+            "explanation":
                 "The trained AI model classified this image as "
                 "No diabetic retinopathy."
-            )
         }
 
-    if class_name == "mild":
+    if predicted_class == "Mild":
+
         return {
             "risk": "Possible mild changes",
-            "explanation": (
+            "explanation":
                 "The trained AI model classified this image as "
                 "Mild diabetic retinopathy."
-            )
         }
 
-    if class_name == "moderate":
+    if predicted_class == "Moderate":
+
         return {
             "risk": "Possible moderate changes",
-            "explanation": (
+            "explanation":
                 "The trained AI model classified this image as "
                 "Moderate diabetic retinopathy."
-            )
         }
 
-    if class_name == "severe":
+    if predicted_class == "Severe":
+
         return {
             "risk": "Possible severe changes",
-            "explanation": (
+            "explanation":
                 "The trained AI model classified this image as "
                 "Severe diabetic retinopathy."
-            )
         }
 
-    if class_name == "proliferate dr":
+    if predicted_class == "Proliferate_DR":
+
         return {
             "risk": "Possible advanced changes",
-            "explanation": (
+            "explanation":
                 "The trained AI model classified this image as "
                 "Proliferative diabetic retinopathy."
-            )
         }
 
     return {
-        "risk": "Further ophthalmic evaluation recommended",
-        "explanation": (
+        "risk":
+            "Further ophthalmic evaluation recommended",
+        "explanation":
             "The trained AI model produced a retinal screening result."
-        )
     }
 
 
 def get_finding(predicted_class):
+
     if predicted_class == "No_DR":
-        return "No obvious diabetic-retinopathy finding predicted by the model."
+        return (
+            "No obvious diabetic-retinopathy finding "
+            "predicted by the model."
+        )
 
     if predicted_class == "Mild":
-        return "Possible mild retinal changes detected."
+        return (
+            "Possible mild retinal changes detected."
+        )
 
     if predicted_class == "Moderate":
-        return "Possible moderate retinal changes detected."
+        return (
+            "Possible moderate retinal changes detected."
+        )
 
     if predicted_class == "Severe":
-        return "Possible severe retinal changes detected."
+        return (
+            "Possible severe retinal changes detected."
+        )
 
     if predicted_class == "Proliferate_DR":
-        return "Possible advanced retinal changes detected."
+        return (
+            "Possible advanced retinal changes detected."
+        )
 
-    return "Possible retinal changes detected."
+    return (
+        "Possible retinal changes detected."
+    )
 
 
 # ------------------------------------------------------------
 # GRAD-CAM
 # ------------------------------------------------------------
 
-def find_last_conv_layer(keras_model):
-    """
-    Automatically finds the last 2D convolution-like layer.
-
-    This avoids hard-coding a layer name such as 'conv5_block16_concat',
-    because different CNN architectures use different names.
-    """
-
-    candidates = []
-
-    for layer in keras_model.layers:
-        try:
-            output_shape = layer.output.shape
-
-            if len(output_shape) == 4:
-                layer_name = layer.__class__.__name__.lower()
-
-                if (
-                    "conv" in layer_name
-                    or "separable" in layer_name
-                    or "depthwise" in layer_name
-                ):
-                    candidates.append(layer)
-        except Exception:
-            continue
-
-    if not candidates:
-        # Second fallback: any 4-D feature-map layer.
-        for layer in reversed(keras_model.layers):
-            try:
-                if len(layer.output.shape) == 4:
-                    candidates.append(layer)
-                    break
-            except Exception:
-                continue
-
-    if not candidates:
-        return None
-
-    return candidates[-1]
-
-
-def gradcam_heatmap(input_tensor, target_class_index=None):
-    """
-    Creates a Grad-CAM heatmap for the predicted class.
-
-    Returns:
-        numpy array in the range [0, 1]
-    """
+def create_gradcam_heatmap(
+    input_tensor,
+    target_class_index
+):
 
     if model is None:
-        raise RuntimeError("CNN model is not loaded.")
 
-    last_conv_layer = find_last_conv_layer(model)
-
-    if last_conv_layer is None:
         raise RuntimeError(
-            "Could not find a convolutional feature layer for Grad-CAM."
+            "CNN model is not loaded."
         )
 
-    # Functional models can expose the layer directly.
-    grad_model = tf.keras.models.Model(
-        inputs=model.inputs,
-        outputs=[
-            last_conv_layer.output,
-            model.output
-        ]
-    )
+    if gradcam_model is None:
+
+        raise RuntimeError(
+            "Grad-CAM model is unavailable."
+        )
 
     with tf.GradientTape() as tape:
-        conv_outputs, predictions = grad_model(input_tensor)
 
-        # Some Keras models return a list/tuple of outputs.
-        if isinstance(predictions, (list, tuple)):
+        conv_outputs, predictions = (
+            gradcam_model(
+                input_tensor,
+                training=False
+            )
+        )
+
+        if isinstance(
+            predictions,
+            (list, tuple)
+        ):
+
             predictions = predictions[0]
 
-        if target_class_index is None:
-            target_class_index = tf.argmax(
-                predictions[0]
-            )
-
-        class_score = predictions[:, target_class_index]
+        class_score = predictions[
+            :,
+            target_class_index
+        ]
 
     gradients = tape.gradient(
         class_score,
@@ -381,17 +509,18 @@ def gradcam_heatmap(input_tensor, target_class_index=None):
     )
 
     if gradients is None:
+
         raise RuntimeError(
             "Grad-CAM gradients could not be calculated."
         )
 
-    # Global average pooling of gradients.
     pooled_gradients = tf.reduce_mean(
         gradients,
         axis=(1, 2)
     )
 
     conv_outputs = conv_outputs[0]
+
     pooled_gradients = pooled_gradients[0]
 
     heatmap = tf.reduce_sum(
@@ -404,7 +533,9 @@ def gradcam_heatmap(input_tensor, target_class_index=None):
         0
     )
 
-    maximum = tf.reduce_max(heatmap)
+    maximum = tf.reduce_max(
+        heatmap
+    )
 
     heatmap = tf.where(
         maximum > 0,
@@ -415,18 +546,24 @@ def gradcam_heatmap(input_tensor, target_class_index=None):
     return heatmap.numpy()
 
 
-def save_gradcam_overlay(original_img, heatmap, output_path):
-    """
-    Saves:
-      original fundus image + Grad-CAM heatmap overlay
+def save_gradcam_overlay(
+    original_img,
+    heatmap,
+    output_path
+):
 
-    The saved image can be displayed directly by the frontend.
-    """
-
-    original = original_img.convert("RGB")
+    original = original_img.convert(
+        "RGB"
+    )
 
     heatmap_image = Image.fromarray(
-        np.uint8(np.clip(heatmap, 0, 1) * 255)
+        np.uint8(
+            np.clip(
+                heatmap,
+                0,
+                1
+            ) * 255
+        )
     )
 
     heatmap_image = heatmap_image.resize(
@@ -434,24 +571,47 @@ def save_gradcam_overlay(original_img, heatmap, output_path):
         Image.Resampling.BILINEAR
     )
 
-    # Red/yellow-style attention map without requiring OpenCV.
-    h = np.asarray(heatmap_image).astype("float32") / 255.0
+    h = (
+        np.asarray(
+            heatmap_image
+        ).astype(
+            "float32"
+        ) / 255.0
+    )
 
-    # Create a simple RGB heatmap.
-    red = np.clip(2.0 * h, 0, 1)
-    green = np.clip(2.0 * h - 0.5, 0, 1)
-    blue = np.clip(2.0 * h - 1.0, 0, 1)
+    red = np.clip(
+        2.0 * h,
+        0,
+        1
+    )
+
+    green = np.clip(
+        2.0 * h - 0.5,
+        0,
+        1
+    )
+
+    blue = np.clip(
+        2.0 * h - 1.0,
+        0,
+        1
+    )
 
     color_map = np.stack(
-        [red, green, blue],
+        [
+            red,
+            green,
+            blue
+        ],
         axis=-1
     )
 
     color_map = Image.fromarray(
-        np.uint8(color_map * 255)
+        np.uint8(
+            color_map * 255
+        )
     )
 
-    # Blend attention map over the original fundus.
     overlay = Image.blend(
         original,
         color_map,
@@ -461,69 +621,110 @@ def save_gradcam_overlay(original_img, heatmap, output_path):
     overlay.save(
         output_path,
         "JPEG",
-        quality=92
+        quality=90
     )
 
 
 # ------------------------------------------------------------
-# HOME
+# HOME PAGE
 # ------------------------------------------------------------
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+
+    return render_template(
+        "index.html"
+    )
 
 
 # ------------------------------------------------------------
-# AI ANALYSIS
+# ANALYZE IMAGE
 # ------------------------------------------------------------
 
-@app.route("/analyze", methods=["POST"])
+@app.route(
+    "/analyze",
+    methods=["POST"]
+)
 def analyze():
 
+    start_time = datetime.datetime.now()
+
     try:
+
+        print("")
+        print("=" * 70)
+        print("NEW VISIONGUARD ANALYSIS REQUEST")
+        print("=" * 70)
+
         # ----------------------------------------------------
         # MODEL CHECK
         # ----------------------------------------------------
 
         if model is None:
+
             return jsonify({
-                "error": (
+                "error":
                     "CNN model is not loaded. "
                     "Check visionguard_model.keras."
-                )
             }), 500
 
         # ----------------------------------------------------
-        # IMAGE
+        # GET IMAGE
         # ----------------------------------------------------
 
-        file = request.files.get("image")
+        file = request.files.get(
+            "image"
+        )
 
         if not file:
+
             return jsonify({
-                "error": "No retinal image uploaded."
+                "error":
+                    "No retinal image uploaded."
             }), 400
 
-        if not allowed_file(file.filename):
+        if not allowed_file(
+            file.filename
+        ):
+
             return jsonify({
-                "error": (
-                    "Invalid image type. Use JPG, JPEG, PNG or WEBP."
-                )
+                "error":
+                    "Invalid image type. "
+                    "Use JPG, JPEG, PNG or WEBP."
             }), 400
 
-        extension = file.filename.rsplit(
-            ".", 1
-        )[1].lower()
+        extension = (
+            file.filename
+            .rsplit(".", 1)[1]
+            .lower()
+        )
+
+        # ----------------------------------------------------
+        # OPEN IMAGE
+        # ----------------------------------------------------
 
         try:
+
             img = Image.open(
                 file.stream
             ).convert("RGB")
+
         except Exception:
+
             return jsonify({
-                "error": "Invalid or corrupted image."
+                "error":
+                    "Invalid or corrupted image."
             }), 400
+
+        print(
+            "Image received:",
+            file.filename
+        )
+
+        print(
+            "Image size:",
+            img.size
+        )
 
         # ----------------------------------------------------
         # PATIENT INFORMATION
@@ -549,86 +750,161 @@ def analyze():
             ""
         ).strip()
 
-        # Generate a patient ID if frontend did not send one.
         if not patient_id:
-            patient_id = "P-" + uuid.uuid4().hex[:6].upper()
 
-        # Separate screening ID.
+            patient_id = (
+                "P-" +
+                uuid.uuid4().hex[:6].upper()
+            )
+
         screening_id = make_screening_id()
 
         # ----------------------------------------------------
         # QUALITY CHECK
         # ----------------------------------------------------
 
-        quality = quality_check(img)
+        print(
+            "Running image quality check..."
+        )
+
+        quality = quality_check(
+            img
+        )
+
+        print(
+            "Quality:",
+            quality
+        )
 
         # ----------------------------------------------------
         # SAVE ORIGINAL IMAGE
         # ----------------------------------------------------
 
         unique_name = (
-            f"{screening_id}_{uuid.uuid4().hex[:8]}.{extension}"
+            f"{screening_id}_"
+            f"{uuid.uuid4().hex[:8]}."
+            f"{extension}"
         )
 
-        original_path = os.path.join(
-            UPLOAD_FOLDER,
+        original_path = (
+            UPLOAD_FOLDER /
             unique_name
         )
 
-        if extension in {"jpg", "jpeg"}:
+        if extension in {
+            "jpg",
+            "jpeg"
+        }:
+
             img.save(
                 original_path,
                 "JPEG",
-                quality=92
+                quality=90
             )
+
         elif extension == "webp":
+
             img.save(
                 original_path,
                 "WEBP",
-                quality=92
+                quality=90
             )
-        else:
-            img.save(original_path)
 
-        image_url = f"/static/uploads/{unique_name}"
+        else:
+
+            img.save(
+                original_path
+            )
+
+        image_url = (
+            "/static/uploads/"
+            + unique_name
+        )
 
         # ----------------------------------------------------
         # PREPARE IMAGE
         # ----------------------------------------------------
 
-        ai_img = prepare_image(img)
+        print(
+            "Preparing image for CNN..."
+        )
+
+        ai_img = prepare_image(
+            img
+        )
+
+        print(
+            "Prepared tensor:",
+            ai_img.shape
+        )
 
         # ----------------------------------------------------
         # CNN PREDICTION
         # ----------------------------------------------------
+
+        print(
+            "Starting CNN prediction..."
+        )
+
+        prediction_start = (
+            datetime.datetime.now()
+        )
 
         predictions = model.predict(
             ai_img,
             verbose=0
         )
 
-        if isinstance(predictions, (list, tuple)):
+        prediction_time = (
+            datetime.datetime.now()
+            - prediction_start
+        ).total_seconds()
+
+        print(
+            "CNN prediction completed in",
+            round(prediction_time, 2),
+            "seconds"
+        )
+
+        # ----------------------------------------------------
+        # NORMALIZE OUTPUT
+        # ----------------------------------------------------
+
+        if isinstance(
+            predictions,
+            (list, tuple)
+        ):
+
             predictions = predictions[0]
 
-        predictions = np.asarray(predictions)
+        predictions = np.asarray(
+            predictions
+        )
 
         if predictions.ndim == 1:
+
             predictions = np.expand_dims(
                 predictions,
                 axis=0
             )
 
         # ----------------------------------------------------
-        # SAFETY CHECK
+        # CHECK MODEL OUTPUT
         # ----------------------------------------------------
 
-        if predictions.shape[-1] != len(CLASS_NAMES):
+        if (
+            predictions.shape[-1]
+            != len(CLASS_NAMES)
+        ):
+
             return jsonify({
-                "error": (
-                    "Model output classes do not match CLASS_NAMES. "
-                    f"Model returned {predictions.shape[-1]} outputs, "
-                    f"but CLASS_NAMES contains {len(CLASS_NAMES)} classes."
-                )
+                "error":
+                    "Model output classes do not match "
+                    "CLASS_NAMES. "
+                    f"Model returned "
+                    f"{predictions.shape[-1]} outputs, "
+                    f"but the application expects "
+                    f"{len(CLASS_NAMES)}."
             }), 500
 
         # ----------------------------------------------------
@@ -636,24 +912,69 @@ def analyze():
         # ----------------------------------------------------
 
         predicted_index = int(
-            np.argmax(predictions[0])
+            np.argmax(
+                predictions[0]
+            )
         )
 
-        predicted_class = CLASS_NAMES[
-            predicted_index
-        ]
-
-        confidence = float(
-            predictions[0][predicted_index] * 100
+        predicted_class = (
+            CLASS_NAMES[
+                predicted_index
+            ]
         )
+
+        confidence_value = float(
+            predictions[0][
+                predicted_index
+            ]
+        )
+
+        # If the model returns logits instead of probabilities,
+        # convert them to probabilities.
+
+        if (
+            confidence_value < 0
+            or confidence_value > 1
+            or not np.isclose(
+                np.sum(
+                    predictions[0]
+                ),
+                1.0,
+                atol=0.05
+            )
+        ):
+
+            probability_values = tf.nn.softmax(
+                tf.convert_to_tensor(
+                    predictions[0],
+                    dtype=tf.float32
+                )
+            ).numpy()
+
+            confidence_value = float(
+                probability_values[
+                    predicted_index
+                ]
+            )
 
         confidence = round(
-            confidence,
+            confidence_value * 100,
             2
         )
 
+        print(
+            "Predicted class:",
+            predicted_class
+        )
+
+        print(
+            "Confidence:",
+            confidence,
+            "%"
+        )
+
         # ----------------------------------------------------
-        # RISK + EXPLANATION
+        # RISK / EXPLANATION
         # ----------------------------------------------------
 
         risk_info = get_risk_message(
@@ -664,28 +985,47 @@ def analyze():
             predicted_class
         )
 
-        lesions = [finding]
+        lesions = [
+            finding
+        ]
 
         # ----------------------------------------------------
         # GRAD-CAM
         # ----------------------------------------------------
 
         gradcam_url = None
-        gradcam_status = "unavailable"
-        gradcam_message = ""
+
+        gradcam_status = (
+            "unavailable"
+        )
+
+        gradcam_message = (
+            "Grad-CAM not generated."
+        )
 
         try:
-            heatmap = gradcam_heatmap(
-                tf.convert_to_tensor(ai_img),
-                target_class_index=predicted_index
+
+            print(
+                "Starting Grad-CAM..."
+            )
+
+            gradcam_start = (
+                datetime.datetime.now()
+            )
+
+            heatmap = create_gradcam_heatmap(
+                tf.convert_to_tensor(
+                    ai_img
+                ),
+                predicted_index
             )
 
             gradcam_filename = (
                 f"{screening_id}_gradcam.jpg"
             )
 
-            gradcam_path = os.path.join(
-                GRADCAM_FOLDER,
+            gradcam_path = (
+                GRADCAM_FOLDER /
                 gradcam_filename
             )
 
@@ -695,35 +1035,73 @@ def analyze():
                 gradcam_path
             )
 
-            gradcam_url = f"/static/gradcam/{gradcam_filename}"
+            gradcam_url = (
+                "/static/gradcam/"
+                + gradcam_filename
+            )
 
-            gradcam_status = "generated"
+            gradcam_time = (
+                datetime.datetime.now()
+                - gradcam_start
+            ).total_seconds()
+
+            gradcam_status = (
+                "generated"
+            )
+
             gradcam_message = (
-                "Grad-CAM attention map generated for the predicted class."
+                "Grad-CAM attention map "
+                "generated for the predicted class."
             )
 
             print(
-                "Grad-CAM generated using:",
-                find_last_conv_layer(model).name
+                "Grad-CAM completed in",
+                round(gradcam_time, 2),
+                "seconds"
             )
 
         except Exception as gradcam_error:
-            # Do not fail the entire screening just because Grad-CAM
-            # cannot be generated for an unusual model architecture.
-            gradcam_status = "unavailable"
-            gradcam_message = str(gradcam_error)
+
+            gradcam_status = (
+                "unavailable"
+            )
+
+            gradcam_message = (
+                "Grad-CAM could not be generated, "
+                "but the CNN screening result is available."
+            )
 
             print(
                 "Grad-CAM warning:",
                 gradcam_error
             )
 
+            traceback.print_exc()
+
         # ----------------------------------------------------
         # TIMESTAMP
         # ----------------------------------------------------
 
-        timestamp = datetime.datetime.now().strftime(
-            "%d %b %Y, %I:%M %p"
+        timestamp = (
+            datetime.datetime.now()
+            .strftime(
+                "%d %b %Y, %I:%M %p"
+            )
+        )
+
+        # ----------------------------------------------------
+        # TOTAL TIME
+        # ----------------------------------------------------
+
+        total_time = (
+            datetime.datetime.now()
+            - start_time
+        ).total_seconds()
+
+        print(
+            "Total analysis time:",
+            round(total_time, 2),
+            "seconds"
         )
 
         # ----------------------------------------------------
@@ -731,74 +1109,101 @@ def analyze():
         # ----------------------------------------------------
 
         response = {
-            "mode": "AI MODEL",
 
-            # Separate IDs
-            "screeningId": screening_id,
+            "mode":
+                "AI MODEL",
+
+            "screeningId":
+                screening_id,
 
             "patient": {
-                "id": patient_id,
-                "name": patient_name,
-                "age": patient_age,
-                "gender": patient_gender
+
+                "id":
+                    patient_id,
+
+                "name":
+                    patient_name,
+
+                "age":
+                    patient_age,
+
+                "gender":
+                    patient_gender
             },
 
-            # Image quality
-            "quality": quality,
+            "quality":
+                quality,
 
-            # Original image
-            "image_url": image_url,
+            "image_url":
+                image_url,
 
-            # Grad-CAM image
-            "gradcam_url": gradcam_url,
+            "gradcam_url":
+                gradcam_url,
 
             "gradcam": {
-                "status": gradcam_status,
-                "message": gradcam_message
+
+                "status":
+                    gradcam_status,
+
+                "message":
+                    gradcam_message
             },
 
-            # AI result
-            "class_": predicted_class,
-            "confidence": confidence,
+            "class_":
+                predicted_class,
 
-            "risk": risk_info["risk"],
-            "explanation": risk_info["explanation"],
+            "confidence":
+                confidence,
 
-            "lesions": lesions,
+            "risk":
+                risk_info["risk"],
 
-            "timestamp": timestamp
+            "explanation":
+                risk_info["explanation"],
+
+            "lesions":
+                lesions,
+
+            "timestamp":
+                timestamp
         }
 
-        print("=" * 60)
-        print("SCREENING COMPLETED")
+        # ----------------------------------------------------
+        # FINAL LOG
+        # ----------------------------------------------------
+
+        print("=" * 70)
+        print("SCREENING COMPLETED SUCCESSFULLY")
         print("Screening ID:", screening_id)
         print("Patient ID:", patient_id)
-        print("Patient:", patient_name)
-        print("Age:", patient_age)
-        print("Gender:", patient_gender)
         print("Result:", predicted_class)
-        print("Confidence:", confidence)
+        print("Confidence:", confidence, "%")
         print("Quality:", quality["score"])
-        print("Original:", image_url)
-        print("Grad-CAM:", gradcam_url)
-        print("=" * 60)
+        print("Grad-CAM:", gradcam_status)
+        print("Total time:", round(total_time, 2), "seconds")
+        print("=" * 70)
 
-        return jsonify(response)
+        return jsonify(
+            response
+        )
 
     except Exception as error:
 
-        print("=" * 60)
+        print("=" * 70)
         print("UNEXPECTED ERROR IN /analyze")
         print(error)
         traceback.print_exc()
-        print("=" * 60)
+        print("=" * 70)
 
         return jsonify({
-            "error": (
-                "An error occurred while analyzing the image. "
-                "Check the Flask terminal for details."
-            ),
-            "details": str(error)
+
+            "error":
+                "An error occurred while analyzing "
+                "the image.",
+
+            "details":
+                str(error)
+
         }), 500
 
 
@@ -809,35 +1214,62 @@ def analyze():
 @app.route("/health")
 def health():
 
-    model_loaded = model is not None
-
     return jsonify({
-        "status": "online" if model_loaded else "model_error",
-        "service": "VisionGuard AI",
-        "model": "loaded" if model_loaded else "not loaded",
-        "classes": CLASS_NAMES,
-        "gradcam": "enabled"
+
+        "status":
+            "online"
+            if model is not None
+            else "model_error",
+
+        "service":
+            "VisionGuard AI",
+
+        "model":
+            "loaded"
+            if model is not None
+            else "not loaded",
+
+        "classes":
+            CLASS_NAMES,
+
+        "gradcam":
+            "enabled"
+            if gradcam_model is not None
+            else "unavailable"
     })
 
 
 # ------------------------------------------------------------
-# ERROR: FILE TOO LARGE
+# FILE TOO LARGE
 # ------------------------------------------------------------
 
 @app.errorhandler(413)
 def file_too_large(error):
+
     return jsonify({
-        "error": "Image is too large. Maximum size is 10 MB."
+
+        "error":
+            "Image is too large. "
+            "Maximum size is 10 MB."
+
     }), 413
 
 
 # ------------------------------------------------------------
-# RUN
+# LOCAL RUN
 # ------------------------------------------------------------
 
 if __name__ == "__main__":
+
+    port = int(
+        os.environ.get(
+            "PORT",
+            "5000"
+        )
+    )
+
     app.run(
-        debug=True,
-        host="127.0.0.1",
-        port=5000
+        debug=False,
+        host="0.0.0.0",
+        port=port
     )
