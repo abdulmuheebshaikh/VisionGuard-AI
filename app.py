@@ -987,18 +987,26 @@ def analyze():
 
         lesions = [finding]
 
-       # ----------------------------------------------------
-       # GRAD-CAM
-       # ----------------------------------------------------
+           # ------------------------------------------------------------
+    # GRAD-CAM
+    # ------------------------------------------------------------
 
-# Temporarily disabled on Render to reduce CPU/memory usage.
+    # Temporarily disabled on Render to reduce CPU/memory usage.
 
-       gradcam_url = None
+    gradcam_url = None
 
-       gradcam_status = "disabled"
+    gradcam_status = "disabled"
 
-       gradcam_message = ("Grad-CAM temporarily disabled for the deployed demo.")
-       print("Grad-CAM skipped.")
+    gradcam_message = (
+        "Grad-CAM temporarily disabled to reduce server resource usage."
+    )
+
+    print("Grad-CAM skipped.")
+
+    # ------------------------------------------------------------
+    # TIMESTAMP
+    # ------------------------------------------------------------
+       
         
         # ----------------------------------------------------
         # TIMESTAMP
