@@ -990,7 +990,7 @@ def analyze():
         ]
 
         # ------------------------------------------------------------
-]       # GRAD-CAM
+       # GRAD-CAM
         # ------------------------------------------------------------
 
 # Temporarily disabled for Render resource testing.
