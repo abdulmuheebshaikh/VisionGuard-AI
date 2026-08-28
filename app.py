@@ -985,26 +985,20 @@ def analyze():
             predicted_class
         )
 
-        lesions = [
-            finding
-        ]
+        lesions = [finding]
 
-        # ------------------------------------------------------------
+       # ----------------------------------------------------
        # GRAD-CAM
-        # ------------------------------------------------------------
+       # ----------------------------------------------------
 
-# Temporarily disabled for Render resource testing.
-# CNN prediction will still be performed normally.
+# Temporarily disabled on Render to reduce CPU/memory usage.
 
-        gradcam_url = None
+       gradcam_url = None
 
-        gradcam_status = "disabled"
-    
-        gradcam_message = (
-            "Grad-CAM temporarily disabled to reduce server resource usage."
-)
+       gradcam_status = "disabled"
 
-        print("Grad-CAM skipped.")
+       gradcam_message = ("Grad-CAM temporarily disabled for the deployed demo.")
+       print("Grad-CAM skipped.")
         
         # ----------------------------------------------------
         # TIMESTAMP
