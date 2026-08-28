@@ -1154,8 +1154,7 @@ def health():
         "classes":
             CLASS_NAMES,
 
-        "gradcam":
-            "enabled"
+        "gradcam":"disabled"
             if gradcam_model is not None
             else "unavailable"
     })
