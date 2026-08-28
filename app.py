@@ -987,27 +987,23 @@ def analyze():
 
         lesions = [finding]
 
-           # ------------------------------------------------------------
-    # GRAD-CAM
-    # ------------------------------------------------------------
+        # ----------------------------------------------------
+        # GRAD-CAM
+        # ----------------------------------------------------
 
-    # Temporarily disabled on Render to reduce CPU/memory usage.
+        # Temporarily disabled on Render to reduce CPU/memory usage.
+        # CNN prediction will still be performed normally.
 
-    gradcam_url = None
+        gradcam_url = None
 
-    gradcam_status = "disabled"
+        gradcam_status = "disabled"
 
-    gradcam_message = (
-        "Grad-CAM temporarily disabled to reduce server resource usage."
-    )
+        gradcam_message = (
+            "Grad-CAM temporarily disabled to reduce server resource usage."
+        )
 
-    print("Grad-CAM skipped.")
+        print("Grad-CAM skipped.")
 
-    # ------------------------------------------------------------
-    # TIMESTAMP
-    # ------------------------------------------------------------
-       
-        
         # ----------------------------------------------------
         # TIMESTAMP
         # ----------------------------------------------------
