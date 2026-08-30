@@ -10,17 +10,16 @@ import tensorflow as tf
 
 
 # ============================================================
-# VISIONGUARD AI - RENDER-OPTIMIZED FLASK BACKEND
+# VISIONGUARD AI - FLASK BACKEND
 # ============================================================
 
 app = Flask(__name__)
 
-# ------------------------------------------------------------
-# RENDER / CPU CONFIGURATION
-# ------------------------------------------------------------
 
-# Limit TensorFlow CPU threads so the free Render instance
-# does not get overloaded.
+# ============================================================
+# CPU CONFIGURATION
+# ============================================================
+
 try:
     tf.config.threading.set_intra_op_parallelism_threads(2)
     tf.config.threading.set_inter_op_parallelism_threads(2)
@@ -28,9 +27,9 @@ except Exception:
     pass
 
 
-# ------------------------------------------------------------
+# ============================================================
 # PATHS
-# ------------------------------------------------------------
+# ============================================================
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -52,11 +51,11 @@ UPLOAD_FOLDER.mkdir(parents=True, exist_ok=True)
 GRADCAM_FOLDER.mkdir(parents=True, exist_ok=True)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # MODEL CLASSES
-# ------------------------------------------------------------
+# ============================================================
 # IMPORTANT:
-# Keep this order exactly the same as the model training order.
+# This order MUST match the order used while training the model.
 
 CLASS_NAMES = [
     "Mild",
@@ -67,18 +66,18 @@ CLASS_NAMES = [
 ]
 
 
-# ------------------------------------------------------------
-# GLOBAL MODEL VARIABLES
-# ------------------------------------------------------------
+# ============================================================
+# GLOBAL VARIABLES
+# ============================================================
 
 model = None
 gradcam_model = None
 last_conv_layer = None
 
 
-# ------------------------------------------------------------
-# LOAD CNN MODEL
-# ------------------------------------------------------------
+# ============================================================
+# LOAD MODEL
+# ============================================================
 
 print("=" * 70)
 print("VISIONGUARD AI")
@@ -108,9 +107,9 @@ except Exception as error:
     print("=" * 70)
 
 
-# ------------------------------------------------------------
+# ============================================================
 # FIND LAST CONVOLUTION LAYER
-# ------------------------------------------------------------
+# ============================================================
 
 def find_last_conv_layer(keras_model):
 
@@ -120,9 +119,9 @@ def find_last_conv_layer(keras_model):
 
         try:
 
-            shape = layer.output.shape
+            output_shape = layer.output.shape
 
-            if len(shape) != 4:
+            if len(output_shape) != 4:
                 continue
 
             layer_type = layer.__class__.__name__.lower()
@@ -139,10 +138,10 @@ def find_last_conv_layer(keras_model):
             continue
 
     if candidates:
+
         return candidates[-1]
 
-    # Fallback:
-    # use the last 4-D feature-map layer.
+    # Fallback to the last 4-D feature map layer
 
     for layer in reversed(keras_model.layers):
 
@@ -157,9 +156,9 @@ def find_last_conv_layer(keras_model):
     return None
 
 
-# ------------------------------------------------------------
-# PREPARE GRAD-CAM MODEL ONCE
-# ------------------------------------------------------------
+# ============================================================
+# PREPARE GRAD-CAM MODEL
+# ============================================================
 
 def prepare_gradcam_model():
 
@@ -167,6 +166,8 @@ def prepare_gradcam_model():
     global last_conv_layer
 
     if model is None:
+
+        print("Grad-CAM unavailable because model is not loaded.")
         return
 
     try:
@@ -175,10 +176,7 @@ def prepare_gradcam_model():
 
         if last_conv_layer is None:
 
-            print(
-                "WARNING: No convolution layer found."
-            )
-
+            print("WARNING: No convolution layer found.")
             gradcam_model = None
             return
 
@@ -195,9 +193,7 @@ def prepare_gradcam_model():
             ]
         )
 
-        print(
-            "Grad-CAM model prepared successfully."
-        )
+        print("Grad-CAM model prepared successfully.")
 
     except Exception as error:
 
@@ -208,14 +204,15 @@ def prepare_gradcam_model():
         )
 
         print(error)
+        traceback.print_exc()
 
 
 prepare_gradcam_model()
 
 
-# ------------------------------------------------------------
+# ============================================================
 # BASIC HELPERS
-# ------------------------------------------------------------
+# ============================================================
 
 def allowed_file(filename):
 
@@ -251,6 +248,7 @@ def get_input_size():
         shape = model.input_shape
 
         if isinstance(shape, list):
+
             shape = shape[0]
 
         height = shape[1]
@@ -295,9 +293,9 @@ def prepare_image(img):
     return array
 
 
-# ------------------------------------------------------------
-# IMAGE QUALITY CHECK
-# ------------------------------------------------------------
+# ============================================================
+# IMAGE QUALITY
+# ============================================================
 
 def quality_check(img):
 
@@ -358,7 +356,10 @@ def quality_check(img):
 
     score = min(
         98,
-        max(70, score)
+        max(
+            70,
+            score
+        )
     )
 
     return {
@@ -369,9 +370,9 @@ def quality_check(img):
     }
 
 
-# ------------------------------------------------------------
+# ============================================================
 # RISK / EXPLANATION
-# ------------------------------------------------------------
+# ============================================================
 
 def get_risk_message(predicted_class):
 
@@ -423,6 +424,7 @@ def get_risk_message(predicted_class):
     return {
         "risk":
             "Further ophthalmic evaluation recommended",
+
         "explanation":
             "The trained AI model produced a retinal screening result."
     }
@@ -431,27 +433,32 @@ def get_risk_message(predicted_class):
 def get_finding(predicted_class):
 
     if predicted_class == "No_DR":
+
         return (
             "No obvious diabetic-retinopathy finding "
             "predicted by the model."
         )
 
     if predicted_class == "Mild":
+
         return (
             "Possible mild retinal changes detected."
         )
 
     if predicted_class == "Moderate":
+
         return (
             "Possible moderate retinal changes detected."
         )
 
     if predicted_class == "Severe":
+
         return (
             "Possible severe retinal changes detected."
         )
 
     if predicted_class == "Proliferate_DR":
+
         return (
             "Possible advanced retinal changes detected."
         )
@@ -461,9 +468,9 @@ def get_finding(predicted_class):
     )
 
 
-# ------------------------------------------------------------
-# GRAD-CAM
-# ------------------------------------------------------------
+# ============================================================
+# CREATE GRAD-CAM HEATMAP
+# ============================================================
 
 def create_gradcam_heatmap(
     input_tensor,
@@ -484,11 +491,9 @@ def create_gradcam_heatmap(
 
     with tf.GradientTape() as tape:
 
-        conv_outputs, predictions = (
-            gradcam_model(
-                input_tensor,
-                training=False
-            )
+        conv_outputs, predictions = gradcam_model(
+            input_tensor,
+            training=False
         )
 
         if isinstance(
@@ -546,6 +551,10 @@ def create_gradcam_heatmap(
     return heatmap.numpy()
 
 
+# ============================================================
+# SAVE GRAD-CAM OVERLAY
+# ============================================================
+
 def save_gradcam_overlay(
     original_img,
     heatmap,
@@ -578,6 +587,8 @@ def save_gradcam_overlay(
             "float32"
         ) / 255.0
     )
+
+    # Simple heatmap approximation
 
     red = np.clip(
         2.0 * h,
@@ -625,9 +636,9 @@ def save_gradcam_overlay(
     )
 
 
-# ------------------------------------------------------------
-# HOME PAGE
-# ------------------------------------------------------------
+# ============================================================
+# HOME
+# ============================================================
 
 @app.route("/")
 def home():
@@ -637,9 +648,9 @@ def home():
     )
 
 
-# ------------------------------------------------------------
-# ANALYZE IMAGE
-# ------------------------------------------------------------
+# ============================================================
+# ANALYZE
+# ============================================================
 
 @app.route(
     "/analyze",
@@ -663,9 +674,11 @@ def analyze():
         if model is None:
 
             return jsonify({
+
                 "error":
                     "CNN model is not loaded. "
                     "Check visionguard_model.keras."
+
             }), 500
 
         # ----------------------------------------------------
@@ -679,8 +692,10 @@ def analyze():
         if not file:
 
             return jsonify({
+
                 "error":
                     "No retinal image uploaded."
+
             }), 400
 
         if not allowed_file(
@@ -688,14 +703,19 @@ def analyze():
         ):
 
             return jsonify({
+
                 "error":
                     "Invalid image type. "
                     "Use JPG, JPEG, PNG or WEBP."
+
             }), 400
 
         extension = (
             file.filename
-            .rsplit(".", 1)[1]
+            .rsplit(
+                ".",
+                1
+            )[1]
             .lower()
         )
 
@@ -707,13 +727,17 @@ def analyze():
 
             img = Image.open(
                 file.stream
-            ).convert("RGB")
+            ).convert(
+                "RGB"
+            )
 
         except Exception:
 
             return jsonify({
+
                 "error":
                     "Invalid or corrupted image."
+
             }), 400
 
         print(
@@ -760,7 +784,7 @@ def analyze():
         screening_id = make_screening_id()
 
         # ----------------------------------------------------
-        # QUALITY CHECK
+        # QUALITY
         # ----------------------------------------------------
 
         print(
@@ -777,7 +801,7 @@ def analyze():
         )
 
         # ----------------------------------------------------
-        # SAVE ORIGINAL IMAGE
+        # SAVE ORIGINAL
         # ----------------------------------------------------
 
         unique_name = (
@@ -846,9 +870,7 @@ def analyze():
             "Starting CNN prediction..."
         )
 
-        prediction_start = (
-            datetime.datetime.now()
-        )
+        prediction_start = datetime.datetime.now()
 
         predictions = model.predict(
             ai_img,
@@ -862,7 +884,10 @@ def analyze():
 
         print(
             "CNN prediction completed in",
-            round(prediction_time, 2),
+            round(
+                prediction_time,
+                2
+            ),
             "seconds"
         )
 
@@ -889,7 +914,7 @@ def analyze():
             )
 
         # ----------------------------------------------------
-        # CHECK MODEL OUTPUT
+        # OUTPUT CHECK
         # ----------------------------------------------------
 
         if (
@@ -898,6 +923,7 @@ def analyze():
         ):
 
             return jsonify({
+
                 "error":
                     "Model output classes do not match "
                     "CLASS_NAMES. "
@@ -905,10 +931,11 @@ def analyze():
                     f"{predictions.shape[-1]} outputs, "
                     f"but the application expects "
                     f"{len(CLASS_NAMES)}."
+
             }), 500
 
         # ----------------------------------------------------
-        # PREDICTION
+        # PREDICTION CLASS
         # ----------------------------------------------------
 
         predicted_index = int(
@@ -929,8 +956,9 @@ def analyze():
             ]
         )
 
-        # If the model returns logits instead of probabilities,
-        # convert them to probabilities.
+        # ----------------------------------------------------
+        # CONVERT LOGITS IF NECESSARY
+        # ----------------------------------------------------
 
         if (
             confidence_value < 0
@@ -974,7 +1002,7 @@ def analyze():
         )
 
         # ----------------------------------------------------
-        # RISK / EXPLANATION
+        # RISK / FINDING
         # ----------------------------------------------------
 
         risk_info = get_risk_message(
@@ -985,24 +1013,107 @@ def analyze():
             predicted_class
         )
 
-        lesions = [finding]
+        lesions = [
+            finding
+        ]
 
-        # ----------------------------------------------------
+        # ====================================================
         # GRAD-CAM
-        # ----------------------------------------------------
-
-        # Temporarily disabled on Render to reduce CPU/memory usage.
-        # CNN prediction will still be performed normally.
+        # ====================================================
 
         gradcam_url = None
 
-        gradcam_status = "disabled"
+        gradcam_status = "unavailable"
 
         gradcam_message = (
-            "Grad-CAM temporarily disabled to reduce server resource usage."
+            "Grad-CAM is not available."
         )
 
-        print("Grad-CAM skipped.")
+        if gradcam_model is not None:
+
+            try:
+
+                print(
+                    "Starting Grad-CAM..."
+                )
+
+                gradcam_start = datetime.datetime.now()
+
+                heatmap = create_gradcam_heatmap(
+                    ai_img,
+                    predicted_index
+                )
+
+                gradcam_name = (
+                    f"{screening_id}_"
+                    f"gradcam.jpg"
+                )
+
+                gradcam_path = (
+                    GRADCAM_FOLDER /
+                    gradcam_name
+                )
+
+                save_gradcam_overlay(
+                    img,
+                    heatmap,
+                    gradcam_path
+                )
+
+                gradcam_url = (
+                    "/static/gradcam/"
+                    + gradcam_name
+                )
+
+                gradcam_time = (
+                    datetime.datetime.now()
+                    - gradcam_start
+                ).total_seconds()
+
+                gradcam_status = "available"
+
+                gradcam_message = (
+                    "Grad-CAM visualization generated successfully."
+                )
+
+                print(
+                    "Grad-CAM completed in",
+                    round(
+                        gradcam_time,
+                        2
+                    ),
+                    "seconds"
+                )
+
+                print(
+                    "Grad-CAM URL:",
+                    gradcam_url
+                )
+
+            except Exception as gradcam_error:
+
+                gradcam_status = "error"
+
+                gradcam_message = (
+                    "Prediction completed, but Grad-CAM "
+                    "could not be generated."
+                )
+
+                print(
+                    "WARNING: Grad-CAM failed:"
+                )
+
+                print(
+                    gradcam_error
+                )
+
+                traceback.print_exc()
+
+        else:
+
+            print(
+                "Grad-CAM model is unavailable."
+            )
 
         # ----------------------------------------------------
         # TIMESTAMP
@@ -1026,7 +1137,10 @@ def analyze():
 
         print(
             "Total analysis time:",
-            round(total_time, 2),
+            round(
+                total_time,
+                2
+            ),
             "seconds"
         )
 
@@ -1095,7 +1209,7 @@ def analyze():
         }
 
         # ----------------------------------------------------
-        # FINAL LOG
+        # LOG
         # ----------------------------------------------------
 
         print("=" * 70)
@@ -1133,12 +1247,28 @@ def analyze():
         }), 500
 
 
-# ------------------------------------------------------------
+# ============================================================
 # HEALTH CHECK
-# ------------------------------------------------------------
+# ============================================================
 
 @app.route("/health")
 def health():
+
+    if model is None:
+
+        model_status = "not loaded"
+
+    else:
+
+        model_status = "loaded"
+
+    if gradcam_model is not None:
+
+        gradcam_status = "available"
+
+    else:
+
+        gradcam_status = "unavailable"
 
     return jsonify({
 
@@ -1151,22 +1281,20 @@ def health():
             "VisionGuard AI",
 
         "model":
-            "loaded"
-            if model is not None
-            else "not loaded",
+            model_status,
 
         "classes":
             CLASS_NAMES,
 
-        "gradcam":"disabled"
-            if gradcam_model is not None
-            else "unavailable"
+        "gradcam":
+            gradcam_status
+
     })
 
 
-# ------------------------------------------------------------
+# ============================================================
 # FILE TOO LARGE
-# ------------------------------------------------------------
+# ============================================================
 
 @app.errorhandler(413)
 def file_too_large(error):
@@ -1180,9 +1308,9 @@ def file_too_large(error):
     }), 413
 
 
-# ------------------------------------------------------------
+# ============================================================
 # LOCAL RUN
-# ------------------------------------------------------------
+# ============================================================
 
 if __name__ == "__main__":
 
