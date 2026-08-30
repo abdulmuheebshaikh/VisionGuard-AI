@@ -1,5 +1,5 @@
-Flask==3.0.3
-Pillow==10.4.0
-numpy==1.26.4
-tensorflow==2.16.1
-gunicorn==22.0.0
+Flask>=3.0,<4
+Pillow>=10.0,<13
+numpy>=1.26,<3
+tensorflow>=2.15,<3
+gunicorn>=21,<24
